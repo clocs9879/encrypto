@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Veil | Timed room</title>
+	<style>
+		:root { --ink:#172321; --muted:#71807b; --paper:#f4f1e9; --card:#fffdf8; --mint:#b8e2cf; --deep:#2e7460; --line:#d9dfd6; --coral:#dc755e; }
+		* { box-sizing:border-box; }
+		body { margin:0; min-height:100vh; background:radial-gradient(circle at 12% 15%,#d6efe2 0 12%,transparent 31%),linear-gradient(135deg,#f8f6f0,#e8f0ea); color:var(--ink); font-family:Arial,sans-serif; }
+		.shell { width:min(900px,calc(100% - 32px)); margin:auto; padding:28px 0; }
+		header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:18px; }
+		.brand { font:bold 18px Georgia,serif; letter-spacing:.08em; } .room { color:var(--muted); font-size:12px; letter-spacing:.12em; text-transform:uppercase; }
+		.timer { color:var(--coral); font-weight:bold; font-variant-numeric:tabular-nums; }
+		.chat { height:calc(100vh - 150px); min-height:450px; margin-top:24px; background:rgba(255,253,248,.84); border:1px solid var(--line); display:flex; flex-direction:column; }
+		.messages { flex:1; overflow-y:auto; padding:28px; display:flex; flex-direction:column; gap:14px; }
+		.empty { margin:auto; color:var(--muted); text-align:center; font:15px Georgia,serif; }
+		.bubble { max-width:min(70%,520px); padding:12px 15px; line-height:1.45; background:#e6eee8; align-self:flex-start; white-space:pre-wrap; overflow-wrap:anywhere; }
+		.bubble.mine { background:var(--mint); align-self:flex-end; } .time { display:block; color:var(--muted); font-size:10px; margin-top:6px; }
+		form { display:flex; gap:10px; padding:18px; border-top:1px solid var(--line); } textarea { flex:1; resize:none; min-height:48px; max-height:130px; padding:14px; border:1px solid var(--line); font:15px Arial,sans-serif; outline:none; } textarea:focus { border-color:var(--deep); }
+		button { border:0; background:var(--ink); color:#fff; padding:0 24px; font-weight:bold; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; } button:hover { background:var(--deep); }
+		.expired { display:none; position:fixed; inset:0; background:var(--paper); place-items:center; text-align:center; padding:24px; } .expired h1 { font:400 48px Georgia,serif; margin:0 0 10px; } .expired p { color:var(--muted); margin:0 0 22px; }
+		@media(max-width:600px) { .shell { width:calc(100% - 20px); padding-top:18px; } .chat { height:calc(100vh - 120px); min-height:400px; } .messages { padding:18px 12px; } .bubble { max-width:85%; } form { padding:12px; } button { padding:0 15px; } }
+	</style>
+</head>
+<body>
+	<div class="shell" id="app"><header><span class="brand">VEIL</span><span class="room">Room <b id="room-label"></b> · <span class="timer" id="timer">20:00</span></span></header><section class="chat"><div class="messages" id="messages"><div class="empty" id="empty">This room is open. Say hello.</div></div><form id="message-form"><textarea id="message" maxlength="1000" placeholder="Write a message..." aria-label="Message"></textarea><button type="submit">Send</button></form></section></div>
+	<div class="expired" id="expired"><div><h1>Time is up.</h1><p>This room and its messages have been deleted.</p><button id="return-home">Return home</button></div></div>
+	<script type="module">
+		import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
+		import { getDatabase, ref, onValue, push, remove } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
+
+		const firebaseApp = initializeApp({
+			apiKey: 'AIzaSyCX9UMgWJ0z4yHSJlukPL34MhpTJgpHnDM',
+			authDomain: 'encryption-432ea.firebaseapp.com',
+			projectId: 'encryption-432ea',
+			storageBucket: 'encryption-432ea.firebasestorage.app',
+			messagingSenderId: '966115034669',
+			appId: '1:966115034669:web:a495556c1076eceb4fdaa4',
+			databaseURL: 'https://encryption-432ea-default-rtdb.firebaseio.com'
+		});
+		const database = getDatabase(firebaseApp);
+		const params = new URLSearchParams(location.search);
+		const code = (params.get('room') || '').toUpperCase();
+		const roomLabel = document.querySelector('#room-label');
+		const timer = document.querySelector('#timer');
+		const messages = document.querySelector('#messages');
+		const messageForm = document.querySelector('#message-form');
+		const messageInput = document.querySelector('#message');
+		const app = document.querySelector('#app');
+		const expired = document.querySelector('#expired');
+		const visitorId = sessionStorage.getItem('veil-visitor') || crypto.randomUUID();
+		sessionStorage.setItem('veil-visitor', visitorId);
+		let room;
+		let unsubscribe;
+
+		window.logout = () => { if (unsubscribe) unsubscribe(); remove(ref(database, 'rooms/' + code)); app.style.display = 'none'; expired.style.display = 'grid'; };
+		function render() {
+			messages.innerHTML = '';
+			const roomMessages = Object.values(room.messages || {}).sort((a, b) => a.sentAt - b.sentAt);
+			if (!roomMessages.length) { messages.innerHTML = '<div class="empty">This room is open. Say hello.</div>'; return; }
+			roomMessages.forEach(item => { const bubble = document.createElement('div'); bubble.className = 'bubble' + (item.sender === visitorId ? ' mine' : ''); bubble.textContent = item.text; const time = document.createElement('span'); time.className = 'time'; time.textContent = new Date(item.sentAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); bubble.append(time); messages.append(bubble); });
+			messages.scrollTop = messages.scrollHeight;
+		}
+		function tick() { if (!room) return; const left = room.expiresAt - Date.now(); if (left <= 0) { window.logout(); return; } const seconds = Math.ceil(left / 1000); timer.textContent = String(Math.floor(seconds / 60)).padStart(2,'0') + ':' + String(seconds % 60).padStart(2,'0'); }
+		roomLabel.textContent = code;
+		unsubscribe = onValue(ref(database, 'rooms/' + code), snapshot => { room = snapshot.val(); if (!room || room.expiresAt <= Date.now()) window.logout(); else { render(); tick(); } });
+		setInterval(tick, 1000);
+		messageForm.addEventListener('submit', event => { event.preventDefault(); const text = messageInput.value.trim(); if (!text || !room || room.expiresAt <= Date.now()) return; push(ref(database, 'rooms/' + code + '/messages'), { text, sender:visitorId, sentAt:Date.now() }); messageInput.value = ''; });
+		messageInput.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); messageForm.requestSubmit(); } });
+		document.querySelector('#return-home').addEventListener('click', () => location.href = 'index.html');
+	</script>
+</body>
+</html>
