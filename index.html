@@ -59,20 +59,8 @@
 		</section>
 		<footer>Rooms expire after 20 minutes. Messages are removed when the room closes.</footer>
 	</main>
-		<script type="module">
-			import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
-			import { getDatabase, ref, get, set } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
-
-			const app = initializeApp({
-				apiKey: 'AIzaSyCX9UMgWJ0z4yHSJlukPL34MhpTJgpHnDM',
-				authDomain: 'encryption-432ea.firebaseapp.com',
-				projectId: 'encryption-432ea',
-				storageBucket: 'encryption-432ea.firebasestorage.app',
-				messagingSenderId: '966115034669',
-				appId: '1:966115034669:web:a495556c1076eceb4fdaa4',
-				databaseURL: 'https://encryption-432ea-default-rtdb.firebaseio.com'
-			});
-			const database = getDatabase(app);
+		<script>
+		const roomsKey = 'veil-rooms';
 		const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 		const createForm = document.querySelector('#create-form');
 		const joinForm = document.querySelector('#join-form');
@@ -82,15 +70,17 @@
 		const roomCode = document.querySelector('#room-code');
 
 		function newCode() { return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(''); }
-		async function roomExists(code) { const snapshot = await get(ref(database, 'rooms/' + code)); const room = snapshot.val(); return room && room.expiresAt > Date.now(); }
+		function getRooms() { return JSON.parse(localStorage.getItem(roomsKey) || '{}'); }
+		function roomExists(code) { const room = getRooms()[code]; return room && room.expiresAt > Date.now(); }
+		function saveRoom(code, room) { const rooms = getRooms(); rooms[code] = room; localStorage.setItem(roomsKey, JSON.stringify(rooms)); }
 		function openChat(code) { window.location.href = 'chat.html?room=' + encodeURIComponent(code); }
 
-		createForm.addEventListener('submit', async event => {
+		createForm.addEventListener('submit', event => {
 			event.preventDefault();
 			let code = newCode();
-			while (await roomExists(code)) code = newCode();
+			while (roomExists(code)) code = newCode();
 			const now = Date.now();
-			await set(ref(database, 'rooms/' + code), { code, createdAt: now, expiresAt: now + 20 * 60 * 1000, messages: {} });
+			saveRoom(code, { code, createdAt: now, expiresAt: now + 20 * 60 * 1000, messages: {} });
 			roomCode.textContent = code;
 			createdCode.style.display = 'block';
 			joinCode.value = code;
@@ -100,10 +90,10 @@
 			event.currentTarget.textContent = 'Copied';
 			setTimeout(() => event.currentTarget.textContent = 'Copy code', 1400);
 		});
-			joinForm.addEventListener('submit', async event => {
+			joinForm.addEventListener('submit', event => {
 			event.preventDefault();
 			const code = joinCode.value.trim().toUpperCase();
-				if (!(await roomExists(code))) { joinMessage.textContent = 'That room does not exist or has expired.'; return; }
+				if (!roomExists(code)) { joinMessage.textContent = 'That room does not exist or has expired.'; return; }
 			openChat(code);
 		});
 	</script>

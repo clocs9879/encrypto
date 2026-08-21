@@ -26,20 +26,8 @@
 <body>
 	<div class="shell" id="app"><header><span class="brand">VEIL</span><span class="room">Room <b id="room-label"></b> · <span class="timer" id="timer">20:00</span></span></header><section class="chat"><div class="messages" id="messages"><div class="empty" id="empty">This room is open. Say hello.</div></div><form id="message-form"><textarea id="message" maxlength="1000" placeholder="Write a message..." aria-label="Message"></textarea><button type="submit">Send</button></form></section></div>
 	<div class="expired" id="expired"><div><h1>Time is up.</h1><p>This room and its messages have been deleted.</p><button id="return-home">Return home</button></div></div>
-	<script type="module">
-		import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
-		import { getDatabase, ref, onValue, push, remove } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
-
-		const firebaseApp = initializeApp({
-			apiKey: 'AIzaSyCX9UMgWJ0z4yHSJlukPL34MhpTJgpHnDM',
-			authDomain: 'encryption-432ea.firebaseapp.com',
-			projectId: 'encryption-432ea',
-			storageBucket: 'encryption-432ea.firebasestorage.app',
-			messagingSenderId: '966115034669',
-			appId: '1:966115034669:web:a495556c1076eceb4fdaa4',
-			databaseURL: 'https://encryption-432ea-default-rtdb.firebaseio.com'
-		});
-		const database = getDatabase(firebaseApp);
+	<script>
+		const roomsKey = 'veil-rooms';
 		const params = new URLSearchParams(location.search);
 		const code = (params.get('room') || '').toUpperCase();
 		const roomLabel = document.querySelector('#room-label');
@@ -52,9 +40,11 @@
 		const visitorId = sessionStorage.getItem('veil-visitor') || crypto.randomUUID();
 		sessionStorage.setItem('veil-visitor', visitorId);
 		let room;
-		let unsubscribe;
+		function getRooms() { return JSON.parse(localStorage.getItem(roomsKey) || '{}'); }
+		function saveRoom() { const rooms = getRooms(); rooms[code] = room; localStorage.setItem(roomsKey, JSON.stringify(rooms)); }
+		function loadRoom() { return getRooms()[code]; }
 
-		window.logout = () => { if (unsubscribe) unsubscribe(); remove(ref(database, 'rooms/' + code)); app.style.display = 'none'; expired.style.display = 'grid'; };
+		window.logout = () => { const rooms = getRooms(); delete rooms[code]; localStorage.setItem(roomsKey, JSON.stringify(rooms)); app.style.display = 'none'; expired.style.display = 'grid'; };
 		function render() {
 			messages.innerHTML = '';
 			const roomMessages = Object.values(room.messages || {}).sort((a, b) => a.sentAt - b.sentAt);
@@ -64,9 +54,11 @@
 		}
 		function tick() { if (!room) return; const left = room.expiresAt - Date.now(); if (left <= 0) { window.logout(); return; } const seconds = Math.ceil(left / 1000); timer.textContent = String(Math.floor(seconds / 60)).padStart(2,'0') + ':' + String(seconds % 60).padStart(2,'0'); }
 		roomLabel.textContent = code;
-		unsubscribe = onValue(ref(database, 'rooms/' + code), snapshot => { room = snapshot.val(); if (!room || room.expiresAt <= Date.now()) window.logout(); else { render(); tick(); } });
+		function refreshRoom() { room = loadRoom(); if (!room || room.expiresAt <= Date.now()) window.logout(); else { render(); tick(); } }
+		refreshRoom();
+		window.addEventListener('storage', event => { if (event.key === roomsKey) refreshRoom(); });
 		setInterval(tick, 1000);
-		messageForm.addEventListener('submit', event => { event.preventDefault(); const text = messageInput.value.trim(); if (!text || !room || room.expiresAt <= Date.now()) return; push(ref(database, 'rooms/' + code + '/messages'), { text, sender:visitorId, sentAt:Date.now() }); messageInput.value = ''; });
+		messageForm.addEventListener('submit', event => { event.preventDefault(); const text = messageInput.value.trim(); if (!text || !room || room.expiresAt <= Date.now()) return; room.messages = room.messages || {}; room.messages[crypto.randomUUID()] = { text, sender:visitorId, sentAt:Date.now() }; saveRoom(); render(); messageInput.value = ''; });
 		messageInput.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); messageForm.requestSubmit(); } });
 		document.querySelector('#return-home').addEventListener('click', () => location.href = 'index.html');
 	</script>
